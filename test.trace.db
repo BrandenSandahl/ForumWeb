@@ -1,0 +1,6 @@
+2016-03-01 11:34:23 jdbc[3]: exception
+org.h2.jdbc.JdbcSQLException: Syntax error in SQL statement "SELECT * FROM USERS WHERE NAME = ?)[*] "; SQL statement:
+SELECT * FROM users WHERE name = ?) [42000-191]
+2016-03-01 11:54:39 jdbc[3]: exception
+org.h2.jdbc.JdbcSQLException: Table "MESSAGE" not found; SQL statement:
+SELECT * FROM message INNER JOIN users ON messages.user_id = users.id WHERE messages.id = ? [42102-191]

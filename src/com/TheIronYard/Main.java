@@ -3,17 +3,88 @@ package com.TheIronYard;
 import spark.*;
 import spark.template.mustache.MustacheTemplateEngine;
 
+import java.sql.*;
 import java.util.ArrayList;
 import java.util.HashMap;
 
 public class Main {
 
-    static HashMap<String, User> users = new HashMap<>();
-    static ArrayList<Message> messages = new ArrayList<>();
+   // static HashMap<String, User> users = new HashMap<>();
+   // static ArrayList<Message> messages = new ArrayList<>();
 
-    public static void main(String[] args) {
-        addTestUsers();
-        addTestMessages();
+
+    public static void createTables(Connection conn) throws SQLException {
+        Statement stmt = conn.createStatement();
+        stmt.execute("CREATE TABLE IF NOT EXISTS users (id IDENTITY, name VARCHAR, password VARCHAR)");
+        stmt.execute("CREATE TABLE IF NOT EXISTS messages (id IDENTITY, user_id INT, reply_id INT, text VARCHAR)");
+    }
+
+    public static void insertUser(Connection conn, String name, String password) throws SQLException {
+        PreparedStatement stmt = conn.prepareStatement("INSERT INTO users VALUES (NULL, ?, ?)");
+        stmt.setString(1, name);
+        stmt.setString(2, password);
+        stmt.execute();
+    }
+
+    public static User selectUser(Connection conn, String name ) throws SQLException {
+        PreparedStatement stmt = conn.prepareStatement("SELECT * FROM users WHERE name = ?");
+        stmt.setString(1, name);
+        ResultSet results = stmt.executeQuery();
+
+        if (results.next()) {
+            int id = results.getInt("id");
+            String password = results.getString("password");
+            return  new User(id, name, password);
+        }
+        return null;
+    }
+
+    public static void insertMessage(Connection conn, int userId, int replyId, String text) throws SQLException {
+        PreparedStatement stmt = conn.prepareStatement("INSERT INTO messages VALUES (NULL, ?, ?, ?)");
+        stmt.setInt(1, userId);
+        stmt.setInt(2, replyId);
+        stmt.setString(3, text);
+        stmt.execute();
+    }
+
+    public static Message selectMessage(Connection conn, int id) throws SQLException {
+        PreparedStatement stmt = conn.prepareStatement("SELECT * FROM messages INNER JOIN users ON messages.user_id = users.id WHERE messages.id = ?");
+        stmt.setInt(1, id);
+
+        ResultSet results = stmt.executeQuery();
+
+        if (results.next()) {
+            int replyId = results.getInt("messages.reply_id");
+            String userName = results.getString("users.name");
+            String text = results.getString("messages.text");
+
+            return new Message(id, replyId, userName, text);
+        }
+        return null;
+    }
+
+    public static ArrayList<Message> selectReplies(Connection conn, int replyId) throws SQLException {
+        ArrayList<Message> messages = new ArrayList<>();
+        PreparedStatement stmt = conn.prepareStatement("SELECT * FROM messages INNER JOIN users ON messages.user_id = users.id WHERE messages.reply_id = ?");
+        stmt.setInt(1, replyId);
+
+        ResultSet results = stmt.executeQuery();
+
+        while (results.next()) {
+            int id = results.getInt("messages.id");
+            String userName = results.getString("users.name");
+            String text = results.getString("messages.text");
+
+            Message m = new Message(id, replyId, userName, text);
+            messages.add(m);
+        }
+        return messages;
+    }
+
+    public static void main(String[] args) throws SQLException {
+        Connection conn = DriverManager.getConnection("jdbc:h2:./main");
+
+        createTables(conn);
 
         Spark.init();
 
@@ -33,10 +104,8 @@ public class Main {
 
 
                     HashMap m = new HashMap();
-                    ArrayList<Message> threads = new ArrayList<>();
-                    for (Message message : messages) {
-                        if (message.replyId == replyIdNum) threads.add(message);
-                    }
+                    ArrayList<Message> threads = selectReplies(conn, replyIdNum); //get all replies from DB
+
                     m.put("messages", threads);
                     m.put("userName", userName);
                     m.put("replyId", replyIdNum);
@@ -54,10 +123,11 @@ public class Main {
                         throw new Exception("Login name not found");
                     }
 
-                    User user = users.get(userName);
+
+
+                    User user = selectUser(conn, userName);
                     if (user == null) {
-                        user = new User(userName, "");
-                        users.put(userName, user);
+                        insertUser(conn, userName, ""); //insert user into DB
                     }
 
                     Session session = request.session();
@@ -96,30 +166,14 @@ public class Main {
                     }
                     int replyIdNum = Integer.parseInt(replyId);
 
-                    Message m = new Message(messages.size(), replyIdNum, userName, text);
-                    messages.add(m);
+                    User u = selectUser(conn, userName);  //find the user id
+                    insertMessage(conn, u.id, replyIdNum, text); //insert the message
 
                     response.redirect(request.headers("Referer"));  //redirects right back to where you came from
                     return "";
                 })
         );
 
-    }
-
-
-
-
-    static void addTestUsers() {
-        users.put("Alice", new User("Alice", ""));
-        users.put("Bob", new User("Bob", ""));
-        users.put("Charlie", new User("Charlie", ""));
-    }
-
-    static void addTestMessages() {
-        messages.add(new Message(0, -1, "Alice", "Hello World!"));
-        messages.add(new Message(1, -1, "Bob", "This is another thread"));
-        messages.add(new Message(2, 0, "Charlie", "Cool thread, Alice"));
-        messages.add(new Message(3, 2, "Alice", "Thank, it's definitely super fucking cool."));
     }
 
 
